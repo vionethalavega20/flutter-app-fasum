@@ -3,13 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_application_fasum/firebase_options.dart';
 import 'package:flutter_application_fasum/screens/sign_in_screen.dart';
 import 'package:flutter_application_fasum/screens/sign_up_screen.dart';
+import 'package:flutter_application_fasum/screens/splash_screen.dart';
 
 Future<void> main() async {
-    WidgetsFlutterBinding.ensureInitialized();
-    await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
- 
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
   runApp(const MyApp());
 }
 
@@ -20,12 +19,12 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Fasilitas Umum',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
       // home: const MyHomePage(title: 'Flutter Demo Home Page'),
-      home: const SignInScreen(),
+      home: const SplashScreen(),
     );
   }
 }
