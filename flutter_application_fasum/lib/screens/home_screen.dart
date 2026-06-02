@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -15,8 +16,91 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  String? selectedCategory;
+
+  List<String> categories = [
+    'Jalan Rusak',
+    'Marka Pudar',
+    'Lampu Mati',
+    'Trotoar Rusak',
+    'Rambu Rusak',
+    'Jembatan Rusak',
+    'Sampah Menumpuk',
+    'Saluran Tersumbat',
+    'Sungai Tercemar',
+    'Sampah Sungai',
+    'Pohon Tumbang',
+    'Taman Rusak',
+    'Fasilitas Rusak',
+    'Pipa Bocor',
+    'Vandalisme',
+    'Banjir',
+    'Lainnya',
+  ];
+
+  void _showCategoryFilter() async {
+    final result = await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.75,
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.clear),
+                  title: const Text('Semua Kategori'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    null,
+                  ), // Null untuk memilih semua kategori
+                ),
+                const Divider(),
+                ...categories.map(
+                  (category) => ListTile(
+                    title: Text(category),
+                    trailing: selectedCategory == category
+                        ? Icon(
+                            Icons.check,
+                            color: Theme.of(context).colorScheme.primary,
+                          )
+                        : null,
+                    onTap: () => Navigator.pop(
+                      context,
+                      category,
+                    ), // Kategori yang dipilih
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (result != null) {
+      setState(() {
+        selectedCategory =
+            result; // Set kategori yang dipilih atau null untuk Semua Kategori
+      });
+    } else {
+      // Jika result adalah null, berarti memilih Semua Kategori
+      setState(() {
+        selectedCategory =
+            null; // Reset ke null untuk menampilkan semua kategori
+      });
+    }
+  }
+
   Future<void> signOut(BuildContext context) async {
     await FirebaseAuth.instance.signOut();
+
+    if (!mounted) return;
 
     Navigator.of(
       context,
@@ -48,7 +132,15 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           IconButton(
-            onPressed: () => signOut(context),
+            onPressed: _showCategoryFilter,
+            icon: const Icon(Icons.filter_list),
+            tooltip: 'Filter Kategori',
+          ),
+
+          IconButton(
+            onPressed: () {
+              signOut(context);
+            },
             icon: const Icon(Icons.logout),
           ),
         ],
@@ -58,49 +150,62 @@ class _HomeScreenState extends State<HomeScreen> {
         onRefresh: () async {
           setState(() {});
         },
-        child: StreamBuilder(
+
+        child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: FirebaseFirestore.instance
               .collection('posts')
               .orderBy('createdAt', descending: true)
               .snapshots(),
+
           builder: (context, snapshot) {
-            if (!snapshot.hasData) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final posts = snapshot.data!.docs;
+            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+              return const Center(child: Text('Belum ada laporan'));
+            }
+
+            final posts = snapshot.data!.docs.where((doc) {
+              final data = doc.data();
+              final category = data['category'] as String? ?? 'Lainnya';
+              return selectedCategory == null || selectedCategory == category;
+            }).toList();
 
             return ListView.builder(
               itemCount: posts.length,
               itemBuilder: (context, index) {
                 final data = posts[index].data();
 
-                final imageBase64 = data['image'];
-                final description = data['description'];
-                final createdAtStr = data['createdAt'];
-                final fullName = data['fullName'] ?? 'Anonim';
-                final latitude = data['latitude'];
-                final longitude = data['longitude'];
-                final category = data['category'] ?? 'Lainnya';
+                final imageBase64 = data['image'] as String? ?? '';
+                final description = data['description'] as String? ?? '';
+                final createdAtValue = data['createdAt'];
+                final fullName = data['fullName'] as String? ?? 'Anonim';
+                final latitude = (data['latitude'] as num?)?.toDouble() ?? 0.0;
+                final longitude =
+                    (data['longitude'] as num?)?.toDouble() ?? 0.0;
+                final category = data['category'] as String? ?? 'Lainnya';
 
-                final createdAt = DateTime.parse(createdAtStr);
+                final createdAt = createdAtValue is Timestamp
+                    ? createdAtValue.toDate()
+                    : DateTime.tryParse(createdAtValue?.toString() ?? '') ??
+                          DateTime.now();
 
-                final heroTag =
-                    'fasum-image-${createdAt.millisecondsSinceEpoch}';
+                final heroTag = 'fasum-image-${posts[index].id}';
 
                 return InkWell(
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (context) => DetailScreen(
-                          heroTag: heroTag,
                           imageBase64: imageBase64,
                           description: description,
-                          fullName: fullName,
                           createdAt: createdAt,
-                          latitude: latitude,
-                          longitude: longitude,
+                          fullName: fullName,
+                          latitude: latitude.toDouble(),
+                          longitude: longitude.toDouble(),
                           category: category,
+                          heroTag: heroTag,
                         ),
                       ),
                     );
@@ -109,21 +214,35 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Card(
                     elevation: 1,
                     color: Theme.of(context).colorScheme.surfaceContainerLow,
+
+                    shadowColor: Theme.of(context).colorScheme.shadow,
+
                     margin: const EdgeInsets.all(10),
+
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
                     ),
+
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+
                       children: [
-                        if (imageBase64 != null)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.memory(
-                              base64Decode(imageBase64),
-                              fit: BoxFit.cover,
-                              width: double.infinity,
-                              height: 200,
+                        if (imageBase64.isNotEmpty)
+                          Hero(
+                            tag: heroTag,
+
+                            child: ClipRRect(
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(10),
+                                topRight: Radius.circular(10),
+                              ),
+
+                              child: Image.memory(
+                                base64Decode(imageBase64),
+                                fit: BoxFit.cover,
+                                width: double.infinity,
+                                height: 200,
+                              ),
                             ),
                           ),
 
@@ -132,29 +251,61 @@ class _HomeScreenState extends State<HomeScreen> {
                             horizontal: 10,
                             vertical: 8,
                           ),
+
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+
                             children: [
                               Text(
                                 formatTime(createdAt),
+
                                 style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey,
                                 ),
                               ),
+
+                              const SizedBox(height: 4),
+
                               Text(
                                 fullName,
+
                                 style: const TextStyle(
                                   fontSize: 16,
-                                  fontWeight: FontWeight.w500,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
+
                               const SizedBox(height: 6),
+
                               Text(
-                                description ?? '',
+                                description,
+
+                                style: const TextStyle(fontSize: 16),
+
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 16),
+                              ),
+
+                              const SizedBox(height: 10),
+
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.category,
+                                    size: 18,
+                                    color: Colors.red,
+                                  ),
+
+                                  const SizedBox(width: 5),
+
+                                  Text(
+                                    category,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -175,6 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
             MaterialPageRoute(builder: (context) => const AddPostScreen()),
           );
         },
+
         child: const Icon(Icons.add),
       ),
     );
